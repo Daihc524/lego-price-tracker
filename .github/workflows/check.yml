@@ -2,9 +2,8 @@ name: LEGO Price Tracker
 
 on:
   schedule:
-    # 每天早上 9 点抓价格（加拿大时间）
-    - cron: '0 9 * * *'
-  workflow_dispatch: # 可以手动触发
+    - cron: '0 9 * * *'   # 每天 9 点执行
+  workflow_dispatch:      # 可以手动触发
 
 jobs:
   price-check:
@@ -13,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: false   # ⭐ 关键：使用 GITHUB_TOKEN 手动 push
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -33,7 +34,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "action@github.com"
           git add prices.json
-          git commit -m "Update prices"
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
+          git commit -m "Update prices" || echo "No changes to commit"
+          git push origin HEAD:main
         env:
+          # 使用 Actions 内置的 token
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
