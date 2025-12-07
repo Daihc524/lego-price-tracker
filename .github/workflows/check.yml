@@ -1,40 +1,15 @@
-name: LEGO Price Tracker
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v3
+    with:
+      persist-credentials: false
 
-on:
-  schedule:
-    - cron: '0 9 * * *'
-  workflow_dispatch:
-
-jobs:
-  price-check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          persist-credentials: false  # ✅ 必须
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install puppeteer node-fetch
-
-      - name: Run price checker
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node check.js
-
-      - name: Commit and push prices.json
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "action@github.com"
-          git add prices.json
-          git commit -m "Update prices" || echo "No changes to commit"
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  - name: Commit and push prices.json
+    run: |
+      git config --global user.name "github-actions[bot]"
+      git config --global user.email "action@github.com"
+      git add prices.json
+      git commit -m "Update prices" || echo "No changes to commit"
+      git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
