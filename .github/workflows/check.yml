@@ -2,7 +2,8 @@ name: Price Check
 
 on:
   schedule:
-    - cron: '0 12 * * *'  # 每天 12:00 UTC 检查
+    # 每 6 小时运行一次
+    - cron: '0 */6 * * *'
   workflow_dispatch:     # 支持手动触发
 
 jobs:
@@ -10,32 +11,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout 仓库，但不使用默认 token
+      # 1️⃣ Checkout 仓库
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          persist-credentials: false  # 禁用默认 GITHUB_TOKEN
+          persist-credentials: false
 
-      # 2️⃣ 安装 Node.js
+      # 2️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      # 3️⃣ 安装依赖
+      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: npm install puppeteer node-fetch
 
-      # 4️⃣ 运行价格抓取脚本
+      # 4️⃣ Run price check
       - name: Run price check
         run: node check.js
 
-      # 5️⃣ Commit & Push 更新的 prices.json
+      # 5️⃣ Commit & Push prices.json using Personal Access Token
       - name: Commit and Push prices.json
         env:
-          PAT: ${{ secrets.PERSONAL_TOKEN }}   # 使用你设置的 PAT
-          DEFAULT_BRANCH: main                 # 仓库默认分支
+          PAT: ${{ secrets.PERSONAL_TOKEN }}
+          DEFAULT_BRANCH: main
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "action@github.com"
           git add prices.json
+          git diff --cached --quiet || git commit -m "Update prices"
+          git push https://x-access-token:${PAT}@github.com/${{ github.repository }} HEAD:${DEFAULT_BRANCH}
