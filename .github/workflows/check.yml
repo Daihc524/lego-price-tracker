@@ -1,41 +1,41 @@
-name: LEGO Price Tracker
+name: Price Check
 
 on:
   schedule:
-    - cron: '0 9 * * *'  # 每天 9 点运行
-  workflow_dispatch:
+    - cron: '0 12 * * *'  # 每天 12:00 UTC 检查
+  workflow_dispatch:     # 支持手动触发
 
 jobs:
   price-check:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout 仓库，但不使用默认 token
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          persist-credentials: false
+          persist-credentials: false  # 禁用默认 GITHUB_TOKEN
 
-      - name: Set up Node.js
+      # 2️⃣ 安装 Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
+          node-version: 20
 
+      # 3️⃣ 安装依赖
       - name: Install dependencies
         run: npm install puppeteer node-fetch
 
-      - name: Run price checker
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # 4️⃣ 运行价格抓取脚本
+      - name: Run price check
         run: node check.js
 
-      - name: Commit and push prices.json
+      # 5️⃣ Commit & Push 更新的 prices.json
+      - name: Commit and Push prices.json
+        env:
+          PAT: ${{ secrets.PERSONAL_TOKEN }}   # 使用你设置的 PAT
+          DEFAULT_BRANCH: main                 # 仓库默认分支
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "action@github.com"
           git add prices.json
-          git commit -m "Update prices" || echo "No changes to commit"
-          DEFAULT_BRANCH=$(git remote show origin | grep "HEAD branch" | awk '{print $NF}')
-          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:$DEFAULT_BRANCH
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
