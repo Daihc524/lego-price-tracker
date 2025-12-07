@@ -6,22 +6,21 @@ const urls = {
   amazon: "https://www.amazon.ca/dp/B0BS5T9B87",
   walmart: "https://www.walmart.ca/search?q=Hogwarts+Castle+LEGO",
   lego: "https://www.lego.com/en-ca/product/hogwarts-castle-71043",
-  bestbuy: "https://www.bestbuy.ca/en-ca/search?search=Hogwarts+castle+LEGO",
-  google: "https://www.google.com/search?q=LEGO+Hogwarts+Castle+76454+price+Canada"
+  bestbuy: "https://www.bestbuy.ca/en-ca/search?search=Hogwarts+Castle+LEGO",
+  google: "https://www.google.com/search?q=LEGO+76454+Hogwarts+Castle+price"
 };
 
 async function scrape(url, selectorList) {
   const browser = await puppeteer.launch({
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-http2"]
+    args: ["--no-sandbox", "--disable-setuid-sandbox"]
   });
-
   const page = await browser.newPage();
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-  );
-
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  try {
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+  } catch {
+    console.log(`⚠️ Timeout loading ${url}`);
+  }
 
   let price = null;
   for (const sel of selectorList) {
@@ -30,33 +29,8 @@ async function scrape(url, selectorList) {
       if (price) break;
     } catch {}
   }
-
   await browser.close();
   return parseFloat(price || 0);
-}
-
-async function scrapeGoogle(url) {
-  const browser = await puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
-  });
-
-  const page = await browser.newPage();
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-  );
-
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
-
-  let price = 0;
-  try {
-    const txt = await page.$eval("body", el => el.innerText);
-    const match = txt.match(/\$\d+\.?\d*/);
-    if (match) price = parseFloat(match[0].replace("$", ""));
-  } catch {}
-
-  await browser.close();
-  return price;
 }
 
 async function notifyTelegram(msg) {
@@ -78,19 +52,22 @@ async function main() {
     history = JSON.parse(fs.readFileSync("prices.json"));
   }
 
-  const results = { date: new Date().toISOString() };
+  const results = {};
+  results.date = new Date().toISOString();
+
   console.log("Checking prices...");
 
-  results.amazon = await scrape(urls.amazon, [".a-price .a-offscreen", "#corePrice_feature_div .a-price-whole"]);
+  results.amazon = await scrape(urls.amazon, ["#corePrice_feature_div .a-price-whole", ".a-offscreen"]);
   results.walmart = await scrape(urls.walmart, [".price", ".css-0"]);
   results.lego = await scrape(urls.lego, ["[data-test='product-price']", ".ProductOverviewstyles__ProductPrice"]);
-  results.bestbuy = await scrape(urls.bestbuy, [".productListing .productItemPrice", ".pricing-price__regular-price"]);
-  results.google = await scrapeGoogle(urls.google);
+  results.bestbuy = await scrape(urls.bestbuy, [".priceView-customer-price span", ".pricing-price__wrapper"]);
+  results.google = await scrape(urls.google, [".a-price-whole", ".a-offscreen"]);
 
   console.log(results);
 
+  // 只发送价格下降消息
   const messages = [];
-  for (const k of ["amazon","walmart","lego","bestbuy","google"]) {
+  for (const k of ["amazon", "walmart", "lego", "bestbuy", "google"]) {
     const oldPrice = history[k] || Infinity;
     const newPrice = results[k];
     if (newPrice > 0 && newPrice < oldPrice) {
@@ -98,7 +75,11 @@ async function main() {
     }
   }
 
-  if (messages.length > 0) await notifyTelegram(messages.join("\n"));
+  if (messages.length > 0) {
+    await notifyTelegram(messages.join("\n"));
+  } else {
+    console.log("No price drop detected.");
+  }
 
   fs.writeFileSync("prices.json", JSON.stringify(results, null, 2));
 }
