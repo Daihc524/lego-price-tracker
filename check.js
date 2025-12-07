@@ -5,47 +5,37 @@ import fetch from "node-fetch";
 const urls = {
   amazon: "https://www.amazon.ca/dp/B0BS5T9B87",
   walmart: "https://www.walmart.ca/search?q=Hogwarts+Castle+LEGO",
-  costco: "https://www.costco.ca/lego-harry-potter-hogwarts-castle.product.4000209137.html",
-  lego: "https://www.lego.com/en-ca/product/hogwarts-castle-71043"
+  lego: "https://www.lego.com/en-ca/product/hogwarts-castle-71043",
+  bestbuy: "https://www.bestbuy.ca/en-ca/search?search=Hogwarts+castle+LEGO",
+  google: "https://www.google.com/search?q=LEGO+Hogwarts+Castle+76454+price+Canada"
 };
 
+// ---- Generic Puppeteer scraper ----
 async function scrape(url, selectorList) {
   const browser = await puppeteer.launch({
     headless: "new",
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--disable-http2",                 // ⭐ 关键：禁用 HTTP/2
-      "--disable-features=NetworkService",  // ⭐ 避免 HTTP/2 fallback
-      "--disable-blink-features=AutomationControlled" // 更像真人浏览器
+      "--disable-http2"
     ]
   });
 
   const page = await browser.newPage();
-
-  // ⭐ 设置真人浏览器 User-Agent
   await page.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
   );
 
-  // ⭐ Costco.ca 必要：降低被屏蔽风险
-  await page.setExtraHTTPHeaders({
-    "accept-language": "en-US,en;q=0.9"
-  });
-
-  // ⭐ 防止直接超时报错
   await page.goto(url, {
-    waitUntil: "networkidle2",
-    timeout: 60000
+    waitUntil: "domcontentloaded",
+    timeout: 30000
   });
 
   let price = null;
 
   for (const sel of selectorList) {
     try {
-      price = await page.$eval(sel, el =>
-        el.innerText.replace(/[^0-9.]/g, "")
-      );
+      price = await page.$eval(sel, el => el.innerText.replace(/[^0-9.]/g, ""));
       if (price) break;
     } catch {}
   }
@@ -54,6 +44,34 @@ async function scrape(url, selectorList) {
   return parseFloat(price || 0);
 }
 
+// ---- Google Search special scraper ----
+async function scrapeGoogle(url) {
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+  });
+
+  const page = await browser.newPage();
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  );
+
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
+
+  let price = 0;
+
+  try {
+    // Google 通常会显示：$469 · In stock
+    const txt = await page.$eval("body", el => el.innerText);
+    const match = txt.match(/\$\d+\.?\d*/);
+    if (match) price = parseFloat(match[0].replace("$", ""));
+  } catch {}
+
+  await browser.close();
+  return price;
+}
+
+// ---- Telegram ----
 async function notifyTelegram(msg) {
   const token = process.env.TELEGRAM_TOKEN;
   const chat_id = process.env.TELEGRAM_CHAT_ID;
@@ -63,11 +81,12 @@ async function notifyTelegram(msg) {
 
   await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {"Content-Type": "application/json"},
     body: JSON.stringify({ chat_id, text: msg })
   });
 }
 
+// ---- Main ----
 async function main() {
   let history = {};
   if (fs.existsSync("prices.json")) {
@@ -80,8 +99,8 @@ async function main() {
   console.log("Checking prices...");
 
   results.amazon = await scrape(urls.amazon, [
-    "#corePrice_feature_div .a-price-whole",
-    ".a-offscreen"
+    ".a-price .a-offscreen",
+    "#corePrice_feature_div .a-price-whole"
   ]);
 
   results.walmart = await scrape(urls.walmart, [
@@ -89,21 +108,25 @@ async function main() {
     ".css-0"
   ]);
 
-  results.costco = await scrape(urls.costco, [
-    ".product-price",
-    ".value"
-  ]);
-
   results.lego = await scrape(urls.lego, [
     "[data-test='product-price']",
     ".ProductOverviewstyles__ProductPrice"
   ]);
 
+  // ⭐ NEW: BestBuy
+  results.bestbuy = await scrape(urls.bestbuy, [
+    ".productListing .productItemPrice",
+    ".pricing-price__regular-price"
+  ]);
+
+  // ⭐ NEW: Google Search
+  results.google = await scrapeGoogle(urls.google);
+
   console.log(results);
 
-  // Check price drop
+  // ---- price drop alerts ----
   const messages = [];
-  for (const k of ["amazon", "walmart", "costco", "lego"]) {
+  for (const k of ["amazon", "walmart", "lego", "bestbuy", "google"]) {
     const oldPrice = history[k] || Infinity;
     const newPrice = results[k];
 
