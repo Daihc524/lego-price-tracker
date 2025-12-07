@@ -1,35 +1,39 @@
-name: LEGO Price Checker
+name: LEGO Price Tracker
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # 每 6 小时运行
-  workflow_dispatch:         # 可手动运行
+    # 每天早上 9 点抓价格（加拿大时间）
+    - cron: '0 9 * * *'
+  workflow_dispatch: # 可以手动触发
 
 jobs:
-  check:
+  price-check:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install puppeteer node-fetch
 
-    - name: Run price checker
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-      run: node check.js
+      - name: Run price checker
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node check.js
 
-    - name: Commit price history
-      run: |
-        git config --global user.email "action@github.com"
-        git config --global user.name "GitHub Actions"
-        git add prices.json
-        git commit -m "Update prices" || echo "No changes"
-        git push
+      - name: Commit and push prices.json
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "action@github.com"
+          git add prices.json
+          git commit -m "Update prices"
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }} HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
