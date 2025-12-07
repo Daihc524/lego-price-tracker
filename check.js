@@ -12,17 +12,40 @@ const urls = {
 async function scrape(url, selectorList) {
   const browser = await puppeteer.launch({
     headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-http2",                 // ⭐ 关键：禁用 HTTP/2
+      "--disable-features=NetworkService",  // ⭐ 避免 HTTP/2 fallback
+      "--disable-blink-features=AutomationControlled" // 更像真人浏览器
+    ]
   });
 
   const page = await browser.newPage();
-  await page.goto(url, { waitUntil: "networkidle2" });
+
+  // ⭐ 设置真人浏览器 User-Agent
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+  );
+
+  // ⭐ Costco.ca 必要：降低被屏蔽风险
+  await page.setExtraHTTPHeaders({
+    "accept-language": "en-US,en;q=0.9"
+  });
+
+  // ⭐ 防止直接超时报错
+  await page.goto(url, {
+    waitUntil: "networkidle2",
+    timeout: 60000
+  });
 
   let price = null;
 
   for (const sel of selectorList) {
     try {
-      price = await page.$eval(sel, el => el.innerText.replace(/[^0-9.]/g, ""));
+      price = await page.$eval(sel, el =>
+        el.innerText.replace(/[^0-9.]/g, "")
+      );
       if (price) break;
     } catch {}
   }
